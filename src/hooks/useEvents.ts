@@ -180,8 +180,31 @@ export function useEvents(): UseEventsReturn {
           break;
       }
     } else {
-      // Default sort by date ascending
-      result.sort((a, b) => a.date.localeCompare(b.date));
+      // Default sort: prioritize upcoming events, then sort by date
+      const getEventStatus = (dateStr: string): 'upcoming' | 'past' => {
+        try {
+          const eventDate = new Date(dateStr);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          eventDate.setHours(0, 0, 0, 0);
+          return eventDate >= today ? 'upcoming' : 'past';
+        } catch {
+          return 'upcoming';
+        }
+      };
+      
+      result.sort((a, b) => {
+        const statusA = getEventStatus(a.date);
+        const statusB = getEventStatus(b.date);
+        
+        // Upcoming events come first
+        if (statusA !== statusB) {
+          return statusA === 'upcoming' ? -1 : 1;
+        }
+        
+        // Within same status, sort by date ascending
+        return a.date.localeCompare(b.date);
+      });
     }
 
     setFilteredEvents(result);

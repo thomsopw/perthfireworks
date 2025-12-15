@@ -73,3 +73,9 @@ html {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+/* Custom marker styling */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}

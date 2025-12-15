@@ -11,16 +11,76 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// Custom firework icon
-const fireworkIcon = new L.Icon({
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
+// Get event status (today, upcoming, past)
+function getEventStatus(dateStr: string): 'today' | 'upcoming' | 'past' {
+  try {
+    const eventDate = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    eventDate.setHours(0, 0, 0, 0);
+    
+    const diff = eventDate.getTime() - today.getTime();
+    if (diff === 0) return 'today';
+    if (diff > 0) return 'upcoming';
+    return 'past';
+  } catch {
+    return 'upcoming';
+  }
+}
+
+// Create custom colored marker icon
+function createMarkerIcon(color: string): L.DivIcon {
+  const size = 32;
+  const html = `
+    <div style="
+      width: ${size}px;
+      height: ${size}px;
+      background-color: ${color};
+      border: 3px solid white;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    ">
+      <div style="
+        transform: rotate(45deg);
+        color: white;
+        font-size: 16px;
+        font-weight: bold;
+      ">🎆</div>
+    </div>
+  `;
+  
+  return L.divIcon({
+    html,
+    className: 'custom-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size],
+    popupAnchor: [0, -size],
+  });
+}
+
+// Marker icons for different statuses
+const upcomingIcon = createMarkerIcon('#10b981'); // Green for upcoming
+const todayIcon = createMarkerIcon('#f59e0b'); // Orange for today
+const pastIcon = createMarkerIcon('#6b7280'); // Gray for past
+
+// Get appropriate icon for event
+function getEventIcon(event: FireworksEvent): L.DivIcon {
+  const status = getEventStatus(event.date);
+  switch (status) {
+    case 'today':
+      return todayIcon;
+    case 'upcoming':
+      return upcomingIcon;
+    case 'past':
+      return pastIcon;
+    default:
+      return upcomingIcon;
+  }
+}
 
 interface MapProps {
   events: FireworksEvent[];
@@ -84,14 +144,30 @@ export default function Map({ events, selectedEvent, onEventClick }: MapProps) {
           <Marker
             key={event.id}
             position={[event.lat, event.lng]}
-            icon={fireworkIcon}
+            icon={getEventIcon(event)}
             eventHandlers={{
               click: () => onEventClick(event),
             }}
           >
             <Popup className="custom-popup">
               <div className="min-w-[240px] p-1">
-                <h3 className="font-bold text-base mb-3 text-gray-900 leading-tight">{event.purpose}</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-base text-gray-900 leading-tight flex-1">{event.purpose}</h3>
+                  {(() => {
+                    const status = getEventStatus(event.date);
+                    const statusConfig = {
+                      today: { label: 'Today', className: 'bg-orange-100 text-orange-700 border-orange-200' },
+                      upcoming: { label: 'Upcoming', className: 'bg-green-100 text-green-700 border-green-200' },
+                      past: { label: 'Past', className: 'bg-gray-100 text-gray-600 border-gray-200' },
+                    };
+                    const { label, className } = statusConfig[status];
+                    return (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ml-2 flex-shrink-0 ${className}`}>
+                        {label}
+                      </span>
+                    );
+                  })()}
+                </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-start gap-2">
                     <span className="text-gray-400 mt-0.5">📅</span>
