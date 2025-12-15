@@ -6,19 +6,13 @@ import type { FireworksEvent } from '../types/events';
 import { formatDateTime } from '../utils/dateUtils';
 
 // Fix for default marker icons in React-Leaflet
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-const DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+// Use CDN or public folder for production
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
-
-L.Marker.prototype.options.icon = DefaultIcon;
 
 interface MapProps {
   events: FireworksEvent[];
@@ -41,7 +35,7 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
 
   // Filter events with valid coordinates
   const validEvents = events.filter(
-    (event) => event.coordinates && event.lat !== 0 && event.lng !== 0
+    (event) => event.coordinates && event.lat !== 0 && event.lng !== 0 && !isNaN(event.lat) && !isNaN(event.lng)
   );
 
   useEffect(() => {
@@ -50,13 +44,24 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
     }
   }, [selectedEvent]);
 
+  // Ensure map container has proper dimensions
+  if (typeof window === 'undefined') {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100" style={{ minHeight: '400px' }}>
+        <p className="text-gray-600">Loading map...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative" style={{ minHeight: '400px', height: '100%' }}>
       <MapContainer
         center={perthCenter}
         zoom={11}
-        style={{ height: '100%', width: '100%' }}
+        style={{ height: '100%', width: '100%', minHeight: '400px' }}
         className="z-0"
+        key="perth-map"
+        scrollWheelZoom={true}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

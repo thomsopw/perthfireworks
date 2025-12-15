@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import Map from './components/Map';
+import MapWrapper from './components/MapWrapper';
 import EventList from './components/EventList';
 import Filters from './components/Filters';
 import NearestEvents from './components/NearestEvents';
@@ -110,9 +110,9 @@ function App() {
         </p>
       </header>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>
         {/* Left sidebar */}
-        <div className="w-full md:w-96 flex flex-col border-r border-gray-200 bg-gray-50">
+        <div className="w-full md:w-96 flex flex-col border-r border-gray-200 bg-gray-50 overflow-hidden">
           {nearestMode ? (
             <NearestEvents
               events={filteredEvents}
@@ -136,8 +136,8 @@ function App() {
         </div>
 
         {/* Map */}
-        <div className="flex-1 relative">
-          <Map
+        <div className="flex-1 relative" style={{ minHeight: '400px', height: '100%' }}>
+          <MapWrapper
             events={filteredEvents}
             selectedEvent={selectedEvent}
             onEventSelect={handleEventSelect}
