@@ -1,5 +1,6 @@
 import type { FireworksEvent } from '../types/events';
 import { formatDateTime } from '../utils/dateUtils';
+import { cleanAddress } from '../utils/addressUtils';
 
 interface EventListProps {
   events: FireworksEvent[];
@@ -41,7 +42,7 @@ export default function EventList({ events, selectedEvent, onEventSelect }: Even
                   ⏱️ Duration: {event.duration}
                 </p>
                 <p className="text-sm text-gray-600">
-                  📍 {event.location}
+                  📍 {cleanAddress(event.location)}
                 </p>
               </div>
             ))}
