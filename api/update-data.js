@@ -43,42 +43,150 @@ async function fixAddressWithAI(location, req) {
   }
 }
 
-async function geocodeAddress(address, req) {
+// Perth metropolitan area bounds for validation
+const PERTH_BOUNDS = {
+  minLat: -32.5,
+  maxLat: -31.5,
+  minLng: 115.5,
+  maxLng: 116.5,
+};
+
+function isValidPerthLocation(lat, lng) {
+  return (
+    lat >= PERTH_BOUNDS.minLat &&
+    lat <= PERTH_BOUNDS.maxLat &&
+    lng >= PERTH_BOUNDS.minLng &&
+    lng <= PERTH_BOUNDS.maxLng &&
+    lat !== 0 &&
+    lng !== 0 &&
+    !isNaN(lat) &&
+    !isNaN(lng)
+  );
+}
+
+async function tryGeocode(query) {
   try {
-    // First, fix the address using AI
-    const fixedAddress = await fixAddressWithAI(address, req);
-    if (fixedAddress !== address) {
-      console.log(`  Fixed: "${address}" → "${fixedAddress}"`);
-    }
-    
-    await delay(500); // Small delay after AI call
-    
     const params = new URLSearchParams({
-      q: fixedAddress + ', Perth, Western Australia, Australia',
+      q: query + ', Perth, Western Australia, Australia',
       format: 'json',
       limit: 1,
+      addressdetails: 1,
     });
-    
+
     const response = await fetch(`${NOMINATIM_URL}?${params}`, {
       headers: {
         'User-Agent': 'Perth-Fireworks-Map/1.0',
       },
     });
-    
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      return null;
     }
-    
+
     const data = await response.json();
-    
+
     if (data && data.length > 0) {
-      return {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon),
-        coordinates: [parseFloat(data[0].lat), parseFloat(data[0].lon)],
-      };
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
+
+      if (isValidPerthLocation(lat, lng)) {
+        return {
+          lat,
+          lng,
+          coordinates: [lat, lng],
+        };
+      }
     }
-    
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function generateGeocodeQueryWithAI(address, purpose, req) {
+  try {
+    let baseUrl;
+    if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    } else if (req?.headers?.host) {
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      baseUrl = `${protocol}://${req.headers.host}`;
+    } else {
+      baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000';
+    }
+
+    const aiUrl = `${baseUrl}/api/generate-geocode-queries`;
+
+    const response = await fetch(aiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ address, purpose }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.queries || [];
+    }
+  } catch (error) {
+    console.error('Error generating geocode queries with AI:', error.message);
+  }
+
+  // Fallback: generate basic queries
+  return [
+    address,
+    address.replace(/WA \d{4}/, '').trim(),
+    address.split(/[–-]/)[0].trim(),
+  ];
+}
+
+async function geocodeAddressWithAI(address, purpose, req) {
+  try {
+    // Step 1: Generate multiple geocoding query variations using AI
+    const queries = await generateGeocodeQueryWithAI(address, purpose, req);
+
+    // Step 2: Try each query strategy in order
+    for (const query of queries) {
+      if (!query || query.trim() === '') continue;
+
+      const result = await tryGeocode(query);
+      if (result) {
+        console.log(`  ✓ Geocoded with query: "${query}"`);
+        return result;
+      }
+
+      // Small delay between attempts
+      await delay(500);
+    }
+
+    // Step 3: Try some common Perth landmark patterns
+    const landmarkPatterns = [
+      { pattern: /WACA/i, query: 'WACA Ground Perth' },
+      { pattern: /ELIZABETH QUAY/i, query: 'Elizabeth Quay Perth' },
+      { pattern: /SCARBOROUGH/i, query: 'Scarborough Beach Perth' },
+      { pattern: /SWAN RIVER/i, query: 'Swan River Perth' },
+      { pattern: /KINGS PARK/i, query: 'Kings Park Perth' },
+      { pattern: /YANCHEP/i, query: 'Yanchep Perth' },
+      { pattern: /KAMBALDA/i, query: 'Kambalda Western Australia' },
+      { pattern: /CLOVERDALE/i, query: 'Cloverdale Perth' },
+      { pattern: /HEATHRIDGE/i, query: 'Heathridge Perth' },
+      { pattern: /PINGELLY/i, query: 'Pingelly Western Australia' },
+      { pattern: /KWINANA/i, query: 'Kwinana Perth' },
+    ];
+
+    for (const { pattern, query } of landmarkPatterns) {
+      if (pattern.test(address)) {
+        const result = await tryGeocode(query);
+        if (result) {
+          console.log(`  ✓ Geocoded using landmark: "${query}"`);
+          return result;
+        }
+        await delay(500);
+      }
+    }
+
     return null;
   } catch (error) {
     console.error(`Error geocoding ${address}:`, error.message);
@@ -162,13 +270,14 @@ export default async function handler(req, res) {
     
     console.log(`Found ${events.length} fireworks events`);
     
-    // Step 2: Geocode all events
-    console.log('Geocoding events...');
+    // Step 2: Geocode all events using AI-enhanced geocoding
+    console.log('Geocoding events with AI-enhanced geocoding...');
     for (let i = 0; i < events.length; i++) {
       const event = events[i];
       console.log(`[${i + 1}/${events.length}] Processing: ${event.location}`);
+      console.log(`  Purpose: ${event.purpose}`);
       
-      const coords = await geocodeAddress(event.location, req);
+      const coords = await geocodeAddressWithAI(event.location, event.purpose, req);
       
       if (coords) {
         event.lat = coords.lat;
@@ -176,7 +285,7 @@ export default async function handler(req, res) {
         event.coordinates = coords.coordinates;
         console.log(`  ✓ Geocoded: ${coords.lat}, ${coords.lng}`);
       } else {
-        console.log(`  ✗ Failed to geocode`);
+        console.log(`  ✗ Failed to geocode - coordinates remain 0,0`);
       }
       
       // Rate limiting - wait between requests
