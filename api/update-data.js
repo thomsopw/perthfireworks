@@ -50,6 +50,8 @@ Given raw event data with potentially malformed text (missing spaces, concatenat
 2. Fix the purpose/event name text to be properly formatted
 3. Determine the most accurate GPS coordinates (latitude, longitude) for the location
 
+IMPORTANT: For water-based locations (barges, floating stages, boats), place coordinates ON THE WATER, not on the nearest land. Use coordinates in the Swan River or ocean as appropriate.
+
 Perth coordinate bounds: Latitude -33.0 to -31.0, Longitude 115.0 to 117.0
 
 You MUST return valid JSON in this exact format:
@@ -62,10 +64,15 @@ You MUST return valid JSON in this exact format:
 
 Common Perth venues and their coordinates:
 - Elizabeth Quay: -31.9583, 115.8576
+- Elizabeth Quay Floating Stage: -31.9580, 115.8575 (in the inlet, on water)
+- Riverside Drive, Perth: -31.9500, 115.8600 (road along Swan River)
+- Langley Park: -31.9520, 115.8620 (park along Riverside Drive)
+- Swan River Barge (Riverside Drive area): -31.9505, 115.8605 (on water, opposite Langley Park/Elizabeth Quay)
 - WACA Ground: -31.9594, 115.8799
 - Optus Stadium: -31.9512, 115.8891
 - Kings Park: -31.9619, 115.8383
 - Scarborough Beach: -31.8936, 115.7571
+- Scarborough Foreshore: -31.8936, 115.7571
 - Fremantle: -32.0569, 115.7439
 - Yanchep: -31.5480, 115.6314
 - Mandurah: -32.5269, 115.7217
@@ -73,9 +80,17 @@ Common Perth venues and their coordinates:
 - Joondalup: -31.7461, 115.7675
 - Midland: -31.8894, 116.0100
 - Armadale: -32.1531, 116.0100
-- Perth CBD/Swan River: -31.9505, 115.8605
+- Perth CBD: -31.9505, 115.8605
+- Perth Water (Swan River central): -31.9500, 115.8600
 
-If you cannot determine exact coordinates, use the nearest known landmark or suburb center.`,
+SPECIFIC WATER-BASED LOCATIONS:
+- "Swan River - Barge" or "Barge Riverside Drive": Use coordinates ON THE SWAN RIVER, approximately -31.9505, 115.8605 (in the water, not on land)
+- "Floating Stage" or "Stage in the Inlet": Use coordinates in the water at Elizabeth Quay inlet, approximately -31.9580, 115.8575
+- Any mention of "barge", "floating", "on water", "inlet", "river" should have coordinates ON THE WATER, not on the nearest park or road
+
+If the location mentions Riverside Drive with a barge or water-based activity, place it in the Swan River near Riverside Drive (around -31.9505, 115.8605), NOT on Riverside Drive itself.
+
+If you cannot determine exact coordinates, use the nearest known landmark or suburb center, but prioritize water-based coordinates for water activities.`,
         },
         {
           role: 'user',
