@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { FireworksEvent } from '../types';
+import MapLegend from './MapLegend';
 
 // Fix Leaflet default marker icons (use CDN)
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: string })._getIconUrl;
@@ -30,7 +31,7 @@ function getEventStatus(dateStr: string): 'today' | 'upcoming' | 'past' {
 
 // Create custom colored marker icon
 function createMarkerIcon(color: string): L.DivIcon {
-  const size = 32;
+  const size = 28;
   const html = `
     <div style="
       width: ${size}px;
@@ -39,18 +40,8 @@ function createMarkerIcon(color: string): L.DivIcon {
       border: 3px solid white;
       border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg);
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    ">
-      <div style="
-        transform: rotate(45deg);
-        color: white;
-        font-size: 16px;
-        font-weight: bold;
-      ">🎆</div>
-    </div>
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    "></div>
   `;
   
   return L.divIcon({
@@ -189,6 +180,8 @@ export default function Map({ events, selectedEvent, onEventClick }: MapProps) {
             </Popup>
           </Marker>
         ))}
+        
+        <MapLegend />
       </MapContainer>
     </div>
   );
