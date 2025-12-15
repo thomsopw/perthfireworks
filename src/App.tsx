@@ -7,7 +7,17 @@ import { useEvents } from './hooks/useEvents';
 import type { FireworksEvent } from './types';
 
 export default function App() {
-  const { events, filteredEvents, loading, error, lastUpdated, setFilters } = useEvents();
+  const { 
+    events, 
+    filteredEvents, 
+    loading, 
+    error, 
+    lastUpdated, 
+    setFilters,
+    eventDistances,
+    userLocation,
+    setUserLocation,
+  } = useEvents();
   const [selectedEvent, setSelectedEvent] = useState<FireworksEvent | null>(null);
   const [showNearest, setShowNearest] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -29,6 +39,29 @@ export default function App() {
     setShowNearest(false);
   }, []);
 
+  const handleLocationRequest = useCallback(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (err) => {
+          console.error('Geolocation error:', err);
+          alert('Unable to get your location. Please check your browser permissions.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by your browser.');
+    }
+  }, [setUserLocation]);
+
   // Error state
   if (error && events.length === 0) {
     return (
@@ -47,18 +80,19 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       {/* Header */}
-      <header className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-3 shadow-lg">
+      <header className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white px-4 py-4 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              🎆 Perth Fireworks Map
+            <h1 className="text-2xl font-bold flex items-center gap-2 mb-1">
+              <span className="text-3xl">🎆</span>
+              <span>Perth Fireworks Map</span>
             </h1>
-            <p className="text-sm text-blue-100 mt-0.5">
+            <p className="text-sm text-blue-100/90 font-medium">
               Find upcoming fireworks events in Western Australia
             </p>
           </div>
           {lastUpdated && (
-            <div className="text-xs text-blue-200">
+            <div className="text-xs text-blue-100/80 bg-blue-500/20 px-3 py-1.5 rounded-full backdrop-blur-sm">
               Updated: {new Date(lastUpdated).toLocaleDateString('en-AU')}
             </div>
           )}
@@ -83,12 +117,15 @@ export default function App() {
                 onFindNearest={handleFindNearest}
                 totalEvents={events.length}
                 filteredCount={filteredEvents.length}
+                userLocation={userLocation}
+                onLocationRequest={handleLocationRequest}
               />
               <EventList
                 events={filteredEvents}
                 selectedEvent={selectedEvent}
                 onEventClick={handleEventClick}
                 loading={loading}
+                eventDistances={eventDistances}
               />
             </>
           )}

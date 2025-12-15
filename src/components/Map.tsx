@@ -89,22 +89,25 @@ export default function Map({ events, selectedEvent, onEventClick }: MapProps) {
               click: () => onEventClick(event),
             }}
           >
-            <Popup>
-              <div className="min-w-[200px]">
-                <h3 className="font-bold text-lg mb-2 text-gray-900">{event.purpose}</h3>
-                <div className="space-y-1 text-sm">
-                  <p className="text-gray-700">
-                    <span className="font-medium">Date:</span> {formatDate(event.date)}
-                  </p>
-                  <p className="text-gray-700">
-                    <span className="font-medium">Time:</span> {event.time}
-                  </p>
-                  <p className="text-gray-700">
-                    <span className="font-medium">Duration:</span> {event.duration}
-                  </p>
-                  <p className="text-gray-700">
-                    <span className="font-medium">Location:</span> {event.location}
-                  </p>
+            <Popup className="custom-popup">
+              <div className="min-w-[240px] p-1">
+                <h3 className="font-bold text-base mb-3 text-gray-900 leading-tight">{event.purpose}</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="text-gray-400 mt-0.5">📅</span>
+                    <div>
+                      <p className="font-medium text-gray-900">{formatDate(event.date)}</p>
+                      <p className="text-gray-600">{event.time}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400">⏱️</span>
+                    <span className="text-gray-700">{event.duration}</span>
+                  </div>
+                  <div className="flex items-start gap-2 pt-1 border-t">
+                    <span className="text-gray-400 mt-0.5">📍</span>
+                    <p className="text-gray-700 leading-relaxed">{event.location}</p>
+                  </div>
                 </div>
               </div>
             </Popup>
