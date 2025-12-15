@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import type { FireworksEvent } from '../types/events';
 import { formatDateTime } from '../utils/dateUtils';
 import AddressDisplay from './AddressDisplay';
+import PurposeDisplay from './PurposeDisplay';
 
 // Fix for default marker icons in React-Leaflet
 // Use CDN or public folder for production
@@ -78,7 +79,9 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
           >
             <Popup>
               <div className="p-2">
-                <h3 className="font-bold text-lg mb-2">{event.purpose}</h3>
+                <h3 className="font-bold text-lg mb-2">
+                  <PurposeDisplay purpose={event.purpose} />
+                </h3>
                 <p className="text-sm text-gray-700 mb-1">
                   <strong>Date & Time:</strong> {formatDateTime(event.date, event.time)}
                 </p>

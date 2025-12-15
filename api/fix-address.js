@@ -14,14 +14,40 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { location } = req.body;
+  const { location, purpose } = req.body;
+  const textToFix = location || purpose;
 
-  if (!location) {
-    return res.status(400).json({ error: 'Location is required' });
+  if (!textToFix) {
+    return res.status(400).json({ error: 'Location or purpose is required' });
   }
 
+  const isAddress = !!location;
+  const isPurpose = !!purpose;
+
   try {
-    // Using OpenAI API to fix the address
+    // Using OpenAI API to fix the text
+    const systemPrompt = isAddress
+      ? `You are a helpful assistant that fixes malformed addresses in Perth, Western Australia. 
+The addresses are missing spaces between words. Fix the address by adding proper spacing and formatting.
+Return ONLY the corrected address, nothing else. Make sure it's a valid Perth address format.
+Examples:
+- "CAPRICORN BEACHRIVERSIDE ESPYANCHEP WA 6035" → "Capricorn Beach, Riverside Esplanade, Yanchep WA 6035"
+- "WACA GROUNDNELSON CREAST PERTH WA 6004" → "WACA Ground, Nelson Crescent, Perth WA 6004"
+- "SWAN RIVER – BARGERIVERSIDE DRPERTH WA 6000" → "Swan River - Barge, Riverside Drive, Perth WA 6000"
+- "ELIZABETH QUAY -FLOATING STAGE IN THE INLETTHE ESPLANADEPERTH WA 6000" → "Elizabeth Quay - Floating Stage in the Inlet, The Esplanade, Perth WA 6000"`
+      : `You are a helpful assistant that fixes malformed event titles and text. 
+The text is missing spaces between words. Fix the text by adding proper spacing and formatting.
+Return ONLY the corrected text, nothing else. Keep the text in a readable format with proper capitalization.
+Examples:
+- "YANCHEP BEACHCLUB OPENING" → "Yanchep Beach Club Opening"
+- "CITY OF PERTHFESTIVE LIGHTS" → "City of Perth Festive Lights"
+- "CHRISTMAS IN ELFENBROOK" → "Christmas in Ellenbrook"
+- "PERTH SCORCHESWBBL SEASONCLOSE PROXIMITY FIREWORKS ONLY" → "Perth Scorches WBBL Season Close Proximity Fireworks Only"`;
+
+    const userPrompt = isAddress
+      ? `Fix this address: "${textToFix}"`
+      : `Fix this event title: "${textToFix}"`;
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -33,18 +59,11 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'system',
-            content: `You are a helpful assistant that fixes malformed addresses in Perth, Western Australia. 
-The addresses are missing spaces between words. Fix the address by adding proper spacing and formatting.
-Return ONLY the corrected address, nothing else. Make sure it's a valid Perth address format.
-Examples:
-- "CAPRICORN BEACHRIVERSIDE ESPYANCHEP WA 6035" → "Capricorn Beach, Riverside Esplanade, Yanchep WA 6035"
-- "WACA GROUNDNELSON CREAST PERTH WA 6004" → "WACA Ground, Nelson Crescent, Perth WA 6004"
-- "SWAN RIVER – BARGERIVERSIDE DRPERTH WA 6000" → "Swan River - Barge, Riverside Drive, Perth WA 6000"
-- "ELIZABETH QUAY -FLOATING STAGE IN THE INLETTHE ESPLANADEPERTH WA 6000" → "Elizabeth Quay - Floating Stage in the Inlet, The Esplanade, Perth WA 6000"`,
+            content: systemPrompt,
           },
           {
             role: 'user',
-            content: `Fix this address: "${location}"`,
+            content: userPrompt,
           },
         ],
         temperature: 0.3,

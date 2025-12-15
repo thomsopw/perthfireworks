@@ -1,6 +1,7 @@
 import type { FireworksEvent } from '../types/events';
 import { formatDateTime } from '../utils/dateUtils';
 import AddressDisplay from './AddressDisplay';
+import PurposeDisplay from './PurposeDisplay';
 
 interface EventListProps {
   events: FireworksEvent[];
@@ -34,7 +35,9 @@ export default function EventList({ events, selectedEvent, onEventSelect }: Even
                 }`}
                 onClick={() => onEventSelect(event)}
               >
-                <h3 className="font-semibold text-lg mb-2">{event.purpose}</h3>
+                <h3 className="font-semibold text-lg mb-2">
+                  <PurposeDisplay purpose={event.purpose} />
+                </h3>
                 <p className="text-sm text-gray-600 mb-1">
                   📅 {formatDateTime(event.date, event.time)}
                 </p>

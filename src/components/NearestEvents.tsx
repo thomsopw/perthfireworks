@@ -3,6 +3,7 @@ import type { FireworksEvent } from '../types/events';
 import { calculateDistance, getUserLocation } from '../utils/geolocation';
 import { formatDateTime } from '../utils/dateUtils';
 import AddressDisplay from './AddressDisplay';
+import PurposeDisplay from './PurposeDisplay';
 
 interface NearestEventsProps {
   events: FireworksEvent[];
@@ -97,7 +98,9 @@ export default function NearestEvents({ events, onEventSelect }: NearestEventsPr
               onClick={() => onEventSelect(event)}
             >
               <div className="flex justify-between items-start mb-1">
-                <h3 className="font-semibold text-sm">{event.purpose}</h3>
+                <h3 className="font-semibold text-sm">
+                  <PurposeDisplay purpose={event.purpose} />
+                </h3>
                 <span className="text-xs font-bold text-blue-600">
                   {event.distance.toFixed(1)} km
                 </span>
