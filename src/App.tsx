@@ -4,6 +4,7 @@ import EventList from './components/EventList';
 import Filters from './components/Filters';
 import NearestEvents from './components/NearestEvents';
 import type { FireworksEvent } from './types/events';
+import { geocodeEvents } from './utils/geocodeUtils';
 
 function App() {
   const [allEvents, setAllEvents] = useState<FireworksEvent[]>([]);
@@ -12,6 +13,7 @@ function App() {
   const [nearestMode, setNearestMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
 
   useEffect(() => {
     // Load fireworks data - try API first, fallback to static file
@@ -22,10 +24,34 @@ function App() {
         if (apiResponse.ok) {
           const apiData = await apiResponse.json();
           if (apiData && apiData.length > 0) {
-            const eventsWithCoords = apiData.map((event: FireworksEvent) => ({
+            let eventsWithCoords = apiData.map((event: FireworksEvent) => ({
               ...event,
               coordinates: event.coordinates || [event.lat, event.lng],
             }));
+            
+            // Check if any events need geocoding
+            const needsGeocoding = eventsWithCoords.filter(
+              (e: FireworksEvent) => e.lat === 0 && e.lng === 0
+            );
+            
+            if (needsGeocoding.length > 0) {
+              console.log(`Geocoding ${needsGeocoding.length} events without coordinates...`);
+              setGeocoding(true);
+              // Geocode missing events in the background
+              geocodeEvents(needsGeocoding).then((geocoded) => {
+                // Update events with geocoded data
+                const updated = eventsWithCoords.map((e: FireworksEvent) => {
+                  const geocodedEvent = geocoded.find(g => g.purpose === e.purpose && g.date === e.date);
+                  return geocodedEvent || e;
+                });
+                setAllEvents(updated);
+                setFilteredEvents(updated);
+                setGeocoding(false);
+              }).catch(() => {
+                setGeocoding(false);
+              });
+            }
+            
             setAllEvents(eventsWithCoords);
             setFilteredEvents(eventsWithCoords);
             setLoading(false);
@@ -43,10 +69,34 @@ function App() {
           throw new Error('Failed to load fireworks data');
         }
         const data: FireworksEvent[] = await response.json();
-        const eventsWithCoords = data.map((event) => ({
+        let eventsWithCoords = data.map((event) => ({
           ...event,
           coordinates: event.coordinates || [event.lat, event.lng],
         }));
+        
+        // Check if any events need geocoding
+        const needsGeocoding = eventsWithCoords.filter(
+          (e: FireworksEvent) => e.lat === 0 && e.lng === 0
+        );
+        
+        if (needsGeocoding.length > 0) {
+          console.log(`Geocoding ${needsGeocoding.length} events without coordinates...`);
+          setGeocoding(true);
+          // Geocode missing events in the background
+          geocodeEvents(needsGeocoding).then((geocoded) => {
+            // Update events with geocoded data
+            const updated = eventsWithCoords.map((e: FireworksEvent) => {
+              const geocodedEvent = geocoded.find(g => g.purpose === e.purpose && g.date === e.date);
+              return geocodedEvent || e;
+            });
+            setAllEvents(updated);
+            setFilteredEvents(updated);
+            setGeocoding(false);
+          }).catch(() => {
+            setGeocoding(false);
+          });
+        }
+        
         setAllEvents(eventsWithCoords);
         setFilteredEvents(eventsWithCoords);
         setLoading(false);
@@ -104,10 +154,20 @@ function App() {
   return (
     <div className="h-screen flex flex-col">
       <header className="bg-blue-600 text-white p-4 shadow-lg">
-        <h1 className="text-2xl font-bold">Perth Fireworks Map</h1>
-        <p className="text-sm text-blue-100 mt-1">
-          Find the nearest fireworks events in Perth, Western Australia
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Perth Fireworks Map</h1>
+            <p className="text-sm text-blue-100 mt-1">
+              Find the nearest fireworks events in Perth, Western Australia
+            </p>
+          </div>
+          {geocoding && (
+            <div className="flex items-center gap-2 text-sm">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+              <span>Geocoding events...</span>
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>

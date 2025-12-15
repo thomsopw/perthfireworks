@@ -23,12 +23,31 @@ interface MapProps {
 }
 
 // Component to handle map centering when selectedEvent changes
-function MapCenter({ center }: { center: [number, number] }) {
+function MapCenter({ center, zoom }: { center: [number, number]; zoom: number }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom());
-  }, [center, map]);
+    if (center && !isNaN(center[0]) && !isNaN(center[1]) && center[0] !== 0 && center[1] !== 0) {
+      map.flyTo(center, zoom, {
+        duration: 1.5,
+        easeLinearity: 0.25,
+      });
+    }
+  }, [center, zoom, map]);
   return null;
+}
+
+// Helper function to validate Perth coordinates
+function isValidPerthLocation(lat: number, lng: number): boolean {
+  return (
+    lat >= -32.5 &&
+    lat <= -31.5 &&
+    lng >= 115.5 &&
+    lng <= 116.5 &&
+    lat !== 0 &&
+    lng !== 0 &&
+    !isNaN(lat) &&
+    !isNaN(lng)
+  );
 }
 
 export default function Map({ events, selectedEvent, onEventSelect }: MapProps) {
@@ -37,7 +56,10 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
 
   // Filter events with valid coordinates
   const validEvents = events.filter(
-    (event) => event.coordinates && event.lat !== 0 && event.lng !== 0 && !isNaN(event.lat) && !isNaN(event.lng)
+    (event) => 
+      event.coordinates && 
+      event.coordinates.length === 2 &&
+      isValidPerthLocation(event.coordinates[0], event.coordinates[1])
   );
 
   useEffect(() => {
@@ -95,8 +117,8 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
             </Popup>
           </Marker>
         ))}
-        {selectedEvent && selectedEvent.coordinates && (
-          <MapCenter center={selectedEvent.coordinates} />
+        {selectedEvent && selectedEvent.coordinates && isValidPerthLocation(selectedEvent.coordinates[0], selectedEvent.coordinates[1]) && (
+          <MapCenter center={selectedEvent.coordinates} zoom={15} />
         )}
       </MapContainer>
     </div>
