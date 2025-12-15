@@ -1,114 +1,145 @@
-import { useEffect, useState } from 'react';
-import type { FireworksEvent } from '../types/events';
-import { calculateDistance, getUserLocation } from '../utils/geolocation';
-import { formatDateTime } from '../utils/dateUtils';
-import AddressDisplay from './AddressDisplay';
-import PurposeDisplay from './PurposeDisplay';
+import { useState, useEffect, useCallback } from 'react';
+import type { FireworksEvent } from '../types';
+import EventCard from './EventCard';
 
 interface NearestEventsProps {
   events: FireworksEvent[];
-  onEventSelect: (event: FireworksEvent | null) => void;
+  selectedEvent: FireworksEvent | null;
+  onEventClick: (event: FireworksEvent) => void;
+  onClose: () => void;
 }
 
-export default function NearestEvents({ events, onEventSelect }: NearestEventsProps) {
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [nearestEvents, setNearestEvents] = useState<
-    Array<FireworksEvent & { distance: number }>
-  >([]);
+interface EventWithDistance extends FireworksEvent {
+  distance: number;
+}
 
-  const handleGetLocation = async () => {
+// Haversine formula to calculate distance between two points
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+export default function NearestEvents({ events, selectedEvent, onEventClick, onClose }: NearestEventsProps) {
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [nearestEvents, setNearestEvents] = useState<EventWithDistance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const getUserLocation = useCallback(() => {
     setLoading(true);
     setError(null);
-    try {
-      const location = await getUserLocation();
-      setUserLocation(location);
 
-      // Calculate distances and sort
-      const eventsWithDistance = events
-        .filter((event) => event.lat !== 0 && event.lng !== 0)
-        .map((event) => ({
-          ...event,
-          distance: calculateDistance(location.lat, location.lng, event.lat, event.lng),
-        }))
-        .sort((a, b) => a.distance - b.distance);
-
-      setNearestEvents(eventsWithDistance);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get location');
-    } finally {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
       setLoading(false);
+      return;
     }
-  };
 
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLoading(false);
+      },
+      (err) => {
+        setError(`Unable to get your location: ${err.message}`);
+        setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  }, []);
+
+  // Get user location on mount
   useEffect(() => {
-    if (userLocation) {
-      const eventsWithDistance = events
-        .filter((event) => event.lat !== 0 && event.lng !== 0)
-        .map((event) => ({
-          ...event,
-          distance: calculateDistance(userLocation.lat, userLocation.lng, event.lat, event.lng),
-        }))
-        .sort((a, b) => a.distance - b.distance);
+    getUserLocation();
+  }, [getUserLocation]);
 
-      setNearestEvents(eventsWithDistance);
+  // Calculate distances when we have user location
+  useEffect(() => {
+    if (userLocation && events.length > 0) {
+      const eventsWithDistance = events.map((event) => ({
+        ...event,
+        distance: calculateDistance(
+          userLocation.lat,
+          userLocation.lng,
+          event.lat,
+          event.lng
+        ),
+      }));
+
+      // Sort by distance and take top 10
+      eventsWithDistance.sort((a, b) => a.distance - b.distance);
+      setNearestEvents(eventsWithDistance.slice(0, 10));
     }
-  }, [events, userLocation]);
+  }, [userLocation, events]);
 
   return (
-    <div className="bg-white p-4 border-b">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold">Nearest Events</h2>
-        {!userLocation && (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="p-4 border-b bg-blue-50">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-bold text-lg text-gray-900">Nearest Events</h2>
           <button
-            onClick={handleGetLocation}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 p-1"
           >
-            {loading ? 'Getting location...' : 'Use My Location'}
+            ✕
           </button>
+        </div>
+        {userLocation && (
+          <p className="text-xs text-gray-500">
+            Your location: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+          </p>
         )}
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-          {error}
+      {/* Content */}
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-3"></div>
+            <p className="text-gray-500">Getting your location...</p>
+          </div>
         </div>
-      )}
-
-      {userLocation && (
-        <div className="mb-4 text-sm text-gray-600">
-          📍 Your location: {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
-        </div>
-      )}
-
-      {nearestEvents.length === 0 ? (
-        <p className="text-gray-500 text-sm">
-          {userLocation
-            ? 'No events found nearby.'
-            : 'Click "Use My Location" to find the nearest fireworks events.'}
-        </p>
-      ) : (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
-          {nearestEvents.map((event, index) => (
-            <div
-              key={index}
-              className="p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
-              onClick={() => onEventSelect(event)}
+      ) : error ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center">
+            <p className="text-red-500 mb-3">{error}</p>
+            <button
+              onClick={getUserLocation}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
             >
-              <div className="flex justify-between items-start mb-1">
-                <h3 className="font-semibold text-sm">
-                  <PurposeDisplay purpose={event.purpose} />
-                </h3>
-                <span className="text-xs font-bold text-blue-600">
-                  {event.distance.toFixed(1)} km
-                </span>
+              Try Again
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {nearestEvents.map((event) => (
+            <div key={event.id} className="relative">
+              <EventCard
+                event={event}
+                isSelected={selectedEvent?.id === event.id}
+                onClick={() => onEventClick(event)}
+              />
+              <div className="absolute top-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
+                {event.distance.toFixed(1)} km
               </div>
-              <p className="text-xs text-gray-600">
-                {formatDateTime(event.date, event.time)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1"><AddressDisplay address={event.location} /></p>
             </div>
           ))}
         </div>
@@ -116,4 +147,3 @@ export default function NearestEvents({ events, onEventSelect }: NearestEventsPr
     </div>
   );
 }
-

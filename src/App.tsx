@@ -1,150 +1,43 @@
-import { useState, useEffect } from 'react';
-import MapWrapper from './components/MapWrapper';
+import { useState, useCallback, useEffect } from 'react';
+import Map from './components/Map';
 import EventList from './components/EventList';
 import Filters from './components/Filters';
 import NearestEvents from './components/NearestEvents';
-import type { FireworksEvent } from './types/events';
-import { geocodeEvents } from './utils/geocodeUtils';
+import { useEvents } from './hooks/useEvents';
+import type { FireworksEvent } from './types';
 
-function App() {
-  const [allEvents, setAllEvents] = useState<FireworksEvent[]>([]);
-  const [filteredEvents, setFilteredEvents] = useState<FireworksEvent[]>([]);
+export default function App() {
+  const { events, filteredEvents, loading, error, lastUpdated, setFilters } = useEvents();
   const [selectedEvent, setSelectedEvent] = useState<FireworksEvent | null>(null);
-  const [nearestMode, setNearestMode] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [geocoding, setGeocoding] = useState(false);
+  const [showNearest, setShowNearest] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
+  // Ensure client-side rendering for Leaflet
   useEffect(() => {
-    // Load fireworks data - try API first, fallback to static file
-    const loadData = async () => {
-      try {
-        // Try API endpoint first
-        const apiResponse = await fetch('/api/fireworks-data');
-        if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          if (apiData && apiData.length > 0) {
-            let eventsWithCoords = apiData.map((event: FireworksEvent) => ({
-              ...event,
-              coordinates: event.coordinates || [event.lat, event.lng],
-            }));
-            
-            // Check if any events need geocoding
-            const needsGeocoding = eventsWithCoords.filter(
-              (e: FireworksEvent) => e.lat === 0 && e.lng === 0
-            );
-            
-            if (needsGeocoding.length > 0) {
-              console.log(`Geocoding ${needsGeocoding.length} events without coordinates...`);
-              setGeocoding(true);
-              // Geocode missing events in the background
-              geocodeEvents(needsGeocoding).then((geocoded) => {
-                // Update events with geocoded data
-                const updated = eventsWithCoords.map((e: FireworksEvent) => {
-                  const geocodedEvent = geocoded.find(g => g.purpose === e.purpose && g.date === e.date);
-                  return geocodedEvent || e;
-                });
-                setAllEvents(updated);
-                setFilteredEvents(updated);
-                setGeocoding(false);
-              }).catch(() => {
-                setGeocoding(false);
-              });
-            }
-            
-            setAllEvents(eventsWithCoords);
-            setFilteredEvents(eventsWithCoords);
-            setLoading(false);
-            return;
-          }
-        }
-      } catch (apiError) {
-        console.log('API fetch failed, trying static file...', apiError);
-      }
-
-      // Fallback to static file
-      try {
-        const response = await fetch('/fireworks-data.json');
-        if (!response.ok) {
-          throw new Error('Failed to load fireworks data');
-        }
-        const data: FireworksEvent[] = await response.json();
-        let eventsWithCoords = data.map((event) => ({
-          ...event,
-          coordinates: event.coordinates || [event.lat, event.lng],
-        }));
-        
-        // Check if any events need geocoding
-        const needsGeocoding = eventsWithCoords.filter(
-          (e: FireworksEvent) => e.lat === 0 && e.lng === 0
-        );
-        
-        if (needsGeocoding.length > 0) {
-          console.log(`Geocoding ${needsGeocoding.length} events without coordinates...`);
-          setGeocoding(true);
-          // Geocode missing events in the background
-          geocodeEvents(needsGeocoding).then((geocoded) => {
-            // Update events with geocoded data
-            const updated = eventsWithCoords.map((e: FireworksEvent) => {
-              const geocodedEvent = geocoded.find(g => g.purpose === e.purpose && g.date === e.date);
-              return geocodedEvent || e;
-            });
-            setAllEvents(updated);
-            setFilteredEvents(updated);
-            setGeocoding(false);
-          }).catch(() => {
-            setGeocoding(false);
-          });
-        }
-        
-        setAllEvents(eventsWithCoords);
-        setFilteredEvents(eventsWithCoords);
-        setLoading(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-        setLoading(false);
-      }
-    };
-
-    loadData();
+    setIsClient(true);
   }, []);
 
-  const handleFilterChange = (filtered: FireworksEvent[]) => {
-    setFilteredEvents(filtered);
-    setSelectedEvent(null);
-  };
-
-  const handleEventSelect = (event: FireworksEvent | null) => {
+  const handleEventClick = useCallback((event: FireworksEvent) => {
     setSelectedEvent(event);
-  };
+  }, []);
 
-  const handleNearestModeToggle = (enabled: boolean) => {
-    setNearestMode(enabled);
-    if (!enabled) {
-      setSelectedEvent(null);
-    }
-  };
+  const handleFindNearest = useCallback(() => {
+    setShowNearest(true);
+  }, []);
 
-  if (loading) {
+  const handleCloseNearest = useCallback(() => {
+    setShowNearest(false);
+  }, []);
+
+  // Error state
+  if (error && events.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading fireworks data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center p-8 bg-red-50 border border-red-200 rounded-lg">
-          <h2 className="text-xl font-bold text-red-800 mb-2">Error Loading Data</h2>
-          <p className="text-red-600 mb-4">{error}</p>
-          <p className="text-sm text-gray-600">
-            Please make sure you have run <code className="bg-gray-200 px-2 py-1 rounded">npm run scrape</code> and{' '}
-            <code className="bg-gray-200 px-2 py-1 rounded">npm run geocode</code> to generate the data file.
+      <div className="h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Data</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <p className="text-sm text-gray-500">
+            The data might not be available yet. Please try again later or trigger a manual update.
           </p>
         </div>
       </div>
@@ -152,60 +45,73 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <header className="bg-blue-600 text-white p-4 shadow-lg">
+    <div className="h-screen flex flex-col bg-gray-100">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-3 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Perth Fireworks Map</h1>
-            <p className="text-sm text-blue-100 mt-1">
-              Find the nearest fireworks events in Perth, Western Australia
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              🎆 Perth Fireworks Map
+            </h1>
+            <p className="text-sm text-blue-100 mt-0.5">
+              Find upcoming fireworks events in Western Australia
             </p>
           </div>
-          {geocoding && (
-            <div className="flex items-center gap-2 text-sm">
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-              <span>Geocoding events...</span>
+          {lastUpdated && (
+            <div className="text-xs text-blue-200">
+              Updated: {new Date(lastUpdated).toLocaleDateString('en-AU')}
             </div>
           )}
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>
-        {/* Left sidebar */}
-        <div className="w-full md:w-96 flex flex-col border-r border-gray-200 bg-gray-50 overflow-hidden">
-          {nearestMode ? (
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-full md:w-96 flex flex-col bg-white border-r shadow-sm overflow-hidden">
+          {showNearest ? (
             <NearestEvents
               events={filteredEvents}
-              onEventSelect={handleEventSelect}
+              selectedEvent={selectedEvent}
+              onEventClick={handleEventClick}
+              onClose={handleCloseNearest}
             />
           ) : (
             <>
               <Filters
-                events={allEvents}
-                onFilterChange={handleFilterChange}
-                onNearestModeToggle={handleNearestModeToggle}
-                nearestMode={nearestMode}
+                onFiltersChange={setFilters}
+                onFindNearest={handleFindNearest}
+                totalEvents={events.length}
+                filteredCount={filteredEvents.length}
               />
               <EventList
                 events={filteredEvents}
                 selectedEvent={selectedEvent}
-                onEventSelect={handleEventSelect}
+                onEventClick={handleEventClick}
+                loading={loading}
               />
             </>
           )}
         </div>
 
         {/* Map */}
-        <div className="flex-1 relative" style={{ minHeight: '400px', height: '100%' }}>
-          <MapWrapper
-            events={filteredEvents}
-            selectedEvent={selectedEvent}
-            onEventSelect={handleEventSelect}
-          />
+        <div className="flex-1 relative" style={{ minHeight: '400px' }}>
+          {isClient ? (
+            <Map
+              events={filteredEvents}
+              selectedEvent={selectedEvent}
+              onEventClick={handleEventClick}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gray-200">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading map...</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-export default App;

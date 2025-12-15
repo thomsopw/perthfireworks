@@ -1,196 +1,186 @@
+import { kv } from '@vercel/kv';
 import * as cheerio from 'cheerio';
+import OpenAI from 'openai';
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const WORKSAFE_URL = 'https://www.worksafe.wa.gov.au/schedule-fireworks-events';
-
-async function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function fixAddressWithAI(location, req) {
-  try {
-    // Determine the base URL for the API
-    let baseUrl;
-    if (process.env.VERCEL_URL) {
-      baseUrl = `https://${process.env.VERCEL_URL}`;
-    } else if (req?.headers?.host) {
-      // Use request host if available
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      baseUrl = `${protocol}://${req.headers.host}`;
-    } else {
-      baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000';
-    }
-    
-    const apiUrl = `${baseUrl}/api/fix-address`;
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ location }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.fixedAddress || location;
-  } catch (error) {
-    console.error(`Error fixing address with AI: ${error.message}`);
-    return location; // Fallback to original
-  }
-}
-
-// Perth metropolitan area bounds for validation
 const PERTH_BOUNDS = {
-  minLat: -32.5,
-  maxLat: -31.5,
-  minLng: 115.5,
-  maxLng: 116.5,
+  minLat: -33.0, maxLat: -31.0,
+  minLng: 115.0, maxLng: 117.0,
 };
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Generate unique ID from event data
+function generateId(date, location, time) {
+  const str = `${date}-${location}-${time}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+// Validate coordinates are within Perth area
 function isValidPerthLocation(lat, lng) {
   return (
-    lat >= PERTH_BOUNDS.minLat &&
-    lat <= PERTH_BOUNDS.maxLat &&
-    lng >= PERTH_BOUNDS.minLng &&
-    lng <= PERTH_BOUNDS.maxLng &&
-    lat !== 0 &&
-    lng !== 0 &&
-    !isNaN(lat) &&
-    !isNaN(lng)
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    !isNaN(lat) && !isNaN(lng) &&
+    lat >= PERTH_BOUNDS.minLat && lat <= PERTH_BOUNDS.maxLat &&
+    lng >= PERTH_BOUNDS.minLng && lng <= PERTH_BOUNDS.maxLng
   );
 }
 
-async function tryGeocode(query) {
+// Use OpenAI to clean and geocode an event
+async function processEventWithAI(rawEvent) {
   try {
-    const params = new URLSearchParams({
-      q: query + ', Perth, Western Australia, Australia',
-      format: 'json',
-      limit: 1,
-      addressdetails: 1,
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are an expert at processing fireworks event data from Perth, Western Australia.
+
+Given raw event data with potentially malformed text (missing spaces, concatenated words), you must:
+1. Fix the location text to be properly formatted with spaces
+2. Fix the purpose/event name text to be properly formatted
+3. Determine the most accurate GPS coordinates (latitude, longitude) for the location
+
+Perth coordinate bounds: Latitude -33.0 to -31.0, Longitude 115.0 to 117.0
+
+You MUST return valid JSON in this exact format:
+{
+  "location": "Clean, properly formatted address",
+  "purpose": "Clean, properly formatted event name",
+  "lat": -31.xxxx,
+  "lng": 115.xxxx
+}
+
+Common Perth venues and their coordinates:
+- Elizabeth Quay: -31.9583, 115.8576
+- WACA Ground: -31.9594, 115.8799
+- Optus Stadium: -31.9512, 115.8891
+- Kings Park: -31.9619, 115.8383
+- Scarborough Beach: -31.8936, 115.7571
+- Fremantle: -32.0569, 115.7439
+- Yanchep: -31.5480, 115.6314
+- Mandurah: -32.5269, 115.7217
+- Rockingham: -32.2931, 115.7314
+- Joondalup: -31.7461, 115.7675
+- Midland: -31.8894, 116.0100
+- Armadale: -32.1531, 116.0100
+- Perth CBD/Swan River: -31.9505, 115.8605
+
+If you cannot determine exact coordinates, use the nearest known landmark or suburb center.`,
+        },
+        {
+          role: 'user',
+          content: `Process this fireworks event:
+- Raw Location: "${rawEvent.location}"
+- Raw Purpose: "${rawEvent.purpose}"
+- Date: ${rawEvent.date}
+- Time: ${rawEvent.time}
+
+Return the cleaned data with GPS coordinates as JSON.`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+      max_tokens: 300,
     });
 
-    const response = await fetch(`${NOMINATIM_URL}?${params}`, {
-      headers: {
-        'User-Agent': 'Perth-Fireworks-Map/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      return null;
+    const responseContent = completion.choices[0]?.message?.content;
+    if (!responseContent) {
+      throw new Error('No content in AI response');
     }
 
-    const data = await response.json();
-
-    if (data && data.length > 0) {
-      const lat = parseFloat(data[0].lat);
-      const lng = parseFloat(data[0].lon);
-
-      if (isValidPerthLocation(lat, lng)) {
-        return {
-          lat,
-          lng,
-          coordinates: [lat, lng],
-        };
-      }
+    const parsed = JSON.parse(responseContent);
+    
+    // Validate the response
+    if (!parsed.location || !parsed.purpose || !parsed.lat || !parsed.lng) {
+      throw new Error('AI response missing required fields');
     }
 
-    return null;
+    if (!isValidPerthLocation(parsed.lat, parsed.lng)) {
+      console.warn(`AI returned invalid coordinates for "${rawEvent.location}": ${parsed.lat}, ${parsed.lng}`);
+      // Default to Perth CBD if coordinates are invalid
+      parsed.lat = -31.9505;
+      parsed.lng = 115.8605;
+    }
+
+    return parsed;
   } catch (error) {
-    return null;
+    console.error(`Error processing event with AI:`, error);
+    // Return cleaned version with default Perth coordinates
+    return {
+      location: rawEvent.location,
+      purpose: rawEvent.purpose,
+      lat: -31.9505,
+      lng: 115.8605,
+    };
   }
 }
 
-async function generateGeocodeQueryWithAI(address, purpose, req) {
-  try {
-    let baseUrl;
-    if (process.env.VERCEL_URL) {
-      baseUrl = `https://${process.env.VERCEL_URL}`;
-    } else if (req?.headers?.host) {
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      baseUrl = `${protocol}://${req.headers.host}`;
-    } else {
-      baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000';
-    }
+// Scrape events from WorkSafe WA
+async function scrapeEvents() {
+  console.log('Fetching from WorkSafe WA...');
+  
+  const response = await fetch(WORKSAFE_URL, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; PerthFireworksMap/1.0)',
+    },
+  });
 
-    const aiUrl = `${baseUrl}/api/generate-geocode-queries`;
-
-    const response = await fetch(aiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ address, purpose }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return data.queries || [];
-    }
-  } catch (error) {
-    console.error('Error generating geocode queries with AI:', error.message);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${response.status}`);
   }
 
-  // Fallback: generate basic queries
-  return [
-    address,
-    address.replace(/WA \d{4}/, '').trim(),
-    address.split(/[–-]/)[0].trim(),
-  ];
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const events = [];
+
+  // Find the events table
+  $('table tbody tr').each((_, row) => {
+    const cells = $(row).find('td');
+    if (cells.length >= 5) {
+      const date = $(cells[0]).text().trim();
+      const time = $(cells[1]).text().trim();
+      const duration = $(cells[2]).text().trim();
+      const location = $(cells[3]).text().trim();
+      const purpose = $(cells[4]).text().trim();
+
+      if (date && time && location) {
+        events.push({
+          date,
+          time,
+          duration,
+          location,
+          purpose,
+        });
+      }
+    }
+  });
+
+  console.log(`Scraped ${events.length} events`);
+  return events;
 }
 
-async function geocodeAddressWithAI(address, purpose, req) {
+// Parse date string to ISO format
+function parseDate(dateStr) {
   try {
-    // Step 1: Generate multiple geocoding query variations using AI
-    const queries = await generateGeocodeQueryWithAI(address, purpose, req);
-
-    // Step 2: Try each query strategy in order
-    for (const query of queries) {
-      if (!query || query.trim() === '') continue;
-
-      const result = await tryGeocode(query);
-      if (result) {
-        console.log(`  ✓ Geocoded with query: "${query}"`);
-        return result;
-      }
-
-      // Small delay between attempts
-      await delay(500);
+    // Handle formats like "Wednesday 11/12/2025"
+    const match = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (match) {
+      const [, day, month, year] = match;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
-
-    // Step 3: Try some common Perth landmark patterns
-    const landmarkPatterns = [
-      { pattern: /WACA/i, query: 'WACA Ground Perth' },
-      { pattern: /ELIZABETH QUAY/i, query: 'Elizabeth Quay Perth' },
-      { pattern: /SCARBOROUGH/i, query: 'Scarborough Beach Perth' },
-      { pattern: /SWAN RIVER/i, query: 'Swan River Perth' },
-      { pattern: /KINGS PARK/i, query: 'Kings Park Perth' },
-      { pattern: /YANCHEP/i, query: 'Yanchep Perth' },
-      { pattern: /KAMBALDA/i, query: 'Kambalda Western Australia' },
-      { pattern: /CLOVERDALE/i, query: 'Cloverdale Perth' },
-      { pattern: /HEATHRIDGE/i, query: 'Heathridge Perth' },
-      { pattern: /PINGELLY/i, query: 'Pingelly Western Australia' },
-      { pattern: /KWINANA/i, query: 'Kwinana Perth' },
-    ];
-
-    for (const { pattern, query } of landmarkPatterns) {
-      if (pattern.test(address)) {
-        const result = await tryGeocode(query);
-        if (result) {
-          console.log(`  ✓ Geocoded using landmark: "${query}"`);
-          return result;
-        }
-        await delay(500);
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error(`Error geocoding ${address}:`, error.message);
-    return null;
+    return dateStr;
+  } catch {
+    return dateStr;
   }
 }
 
@@ -198,141 +188,81 @@ export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  // Optional: Add authentication token check
-  const authToken = req.headers.authorization?.replace('Bearer ', '');
-  if (process.env.CRON_SECRET && authToken !== process.env.CRON_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  // Only allow POST for cron or GET for manual trigger
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     console.log('Starting data update...');
-    
-    // Step 1: Scrape fireworks data
-    console.log('Fetching fireworks schedule from WorkSafe WA...');
-    const response = await fetch(WORKSAFE_URL);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+
+    // Step 1: Scrape events
+    const rawEvents = await scrapeEvents();
+
+    if (rawEvents.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No events found on the page',
+        count: 0,
+      });
     }
+
+    // Step 2: Process each event with AI
+    const processedEvents = [];
     
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    
-    const events = [];
-    
-    // Find the table with fireworks events
-    $('table tbody tr').each((index, element) => {
-      const $row = $(element);
-      const cells = $row.find('td');
+    for (let i = 0; i < rawEvents.length; i++) {
+      const rawEvent = rawEvents[i];
+      console.log(`Processing event ${i + 1}/${rawEvents.length}: ${rawEvent.purpose.substring(0, 30)}...`);
       
-      if (cells.length >= 4) {
-        const dateStr = $(cells[0]).text().trim();
-        const timeDuration = $(cells[1]).text().trim();
-        const location = $(cells[2]).text().trim();
-        const purpose = $(cells[3]).text().trim();
-        
-        // Parse time and duration
-        const timeMatch = timeDuration.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/);
-        const durationMatch = timeDuration.match(/(\d+)\s*(?:minute|minutes|min)/i);
-        
-        const time = timeMatch ? timeMatch[1] : '';
-        const duration = durationMatch ? `${durationMatch[1]} minutes` : '';
-        
-        // Parse date - format is like "11/12/2025Thursday"
-        const dateMatch = dateStr.match(/^(\d{1,2}\/\d{1,2}\/\d{4})/);
-        let date = '';
-        if (dateMatch) {
-          const [day, month, year] = dateMatch[1].split('/');
-          date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
-        
-        if (date && time && location) {
-          events.push({
-            date,
-            time,
-            duration: duration || 'Unknown',
-            location,
-            purpose: purpose || 'Fireworks display',
-            lat: 0,
-            lng: 0,
-          });
-        }
-      }
-    });
-    
-    console.log(`Found ${events.length} fireworks events`);
-    
-    // Step 2: Geocode all events using AI-enhanced geocoding
-    console.log('Geocoding events with AI-enhanced geocoding...');
-    for (let i = 0; i < events.length; i++) {
-      const event = events[i];
-      console.log(`[${i + 1}/${events.length}] Processing: ${event.location}`);
-      console.log(`  Purpose: ${event.purpose}`);
+      // Process with AI
+      const aiResult = await processEventWithAI(rawEvent);
       
-      const coords = await geocodeAddressWithAI(event.location, event.purpose, req);
+      // Create final event object
+      const event = {
+        id: generateId(rawEvent.date, rawEvent.location, rawEvent.time),
+        date: parseDate(rawEvent.date),
+        time: rawEvent.time,
+        duration: rawEvent.duration,
+        location: aiResult.location,
+        purpose: aiResult.purpose,
+        lat: aiResult.lat,
+        lng: aiResult.lng,
+      };
       
-      if (coords) {
-        event.lat = coords.lat;
-        event.lng = coords.lng;
-        event.coordinates = coords.coordinates;
-        console.log(`  ✓ Geocoded: ${coords.lat}, ${coords.lng}`);
-      } else {
-        console.log(`  ✗ Failed to geocode - coordinates remain 0,0`);
-      }
+      processedEvents.push(event);
       
-      // Rate limiting - wait between requests
-      if (i < events.length - 1) {
-        await delay(1000); // 1 second delay for Nominatim
+      // Rate limiting - wait 500ms between AI calls
+      if (i < rawEvents.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
-    
-    // Step 3: Store in Vercel KV if available
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-      try {
-        const kvResponse = await fetch(
-          `${process.env.KV_REST_API_URL}/set/fireworks-data`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${process.env.KV_REST_API_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(JSON.stringify(events)),
-          }
-        );
-        
-        if (kvResponse.ok) {
-          console.log('Data stored in Vercel KV');
-        } else {
-          console.error('KV store failed:', await kvResponse.text());
-        }
-      } catch (kvError) {
-        console.error('Failed to store in KV:', kvError.message);
-      }
-    }
-    
-    const timestamp = new Date().toISOString();
-    
+
+    console.log(`Processed ${processedEvents.length} events`);
+
+    // Step 3: Store in Vercel KV
+    await kv.set('fireworks-events', processedEvents);
+    await kv.set('fireworks-last-updated', new Date().toISOString());
+
+    console.log('Data stored in KV successfully');
+
     return res.status(200).json({
       success: true,
-      timestamp,
-      events,
-      count: events.length,
+      message: 'Data updated successfully',
+      count: processedEvents.length,
+      lastUpdated: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error updating data:', error);
     return res.status(500).json({
-      error: 'Failed to update data',
-      details: error.message,
+      success: false,
+      error: error.message,
     });
   }
 }
-

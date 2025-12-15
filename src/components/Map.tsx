@@ -1,127 +1,116 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import type { FireworksEvent } from '../types/events';
-import { formatDateTime } from '../utils/dateUtils';
-import AddressDisplay from './AddressDisplay';
-import PurposeDisplay from './PurposeDisplay';
+import type { FireworksEvent } from '../types';
 
-// Fix for default marker icons in React-Leaflet
-// Use CDN or public folder for production
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+// Fix Leaflet default marker icons (use CDN)
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: string })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
+// Custom firework icon
+const fireworkIcon = new L.Icon({
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
 interface MapProps {
   events: FireworksEvent[];
   selectedEvent: FireworksEvent | null;
-  onEventSelect: (event: FireworksEvent | null) => void;
+  onEventClick: (event: FireworksEvent) => void;
 }
 
-// Component to handle map centering when selectedEvent changes
-function MapCenter({ center, zoom }: { center: [number, number]; zoom: number }) {
+// Component to handle map centering
+function MapController({ selectedEvent }: { selectedEvent: FireworksEvent | null }) {
   const map = useMap();
+  const initialMount = useRef(true);
+
   useEffect(() => {
-    if (center && !isNaN(center[0]) && !isNaN(center[1]) && center[0] !== 0 && center[1] !== 0) {
-      map.flyTo(center, zoom, {
-        duration: 1.5,
-        easeLinearity: 0.25,
+    if (selectedEvent && !initialMount.current) {
+      map.flyTo([selectedEvent.lat, selectedEvent.lng], 14, {
+        duration: 1,
       });
     }
-  }, [center, zoom, map]);
+    initialMount.current = false;
+  }, [selectedEvent, map]);
+
   return null;
 }
 
-// Helper function to validate Perth coordinates
-function isValidPerthLocation(lat: number, lng: number): boolean {
-  return (
-    lat >= -32.5 &&
-    lat <= -31.5 &&
-    lng >= 115.5 &&
-    lng <= 116.5 &&
-    lat !== 0 &&
-    lng !== 0 &&
-    !isNaN(lat) &&
-    !isNaN(lng)
-  );
+// Format date for display
+function formatDate(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-AU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
 }
 
-export default function Map({ events, selectedEvent, onEventSelect }: MapProps) {
-  // Perth center coordinates [lat, lng]
+export default function Map({ events, selectedEvent, onEventClick }: MapProps) {
+  // Perth center coordinates
   const perthCenter: [number, number] = [-31.9505, 115.8605];
 
-  // Filter events with valid coordinates
-  const validEvents = events.filter(
-    (event) => 
-      event.coordinates && 
-      event.coordinates.length === 2 &&
-      isValidPerthLocation(event.coordinates[0], event.coordinates[1])
-  );
-
-  useEffect(() => {
-    if (selectedEvent && selectedEvent.coordinates) {
-      // Map will be centered by MapCenter component
-    }
-  }, [selectedEvent]);
-
-  // Ensure map container has proper dimensions
-  if (typeof window === 'undefined') {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-gray-100" style={{ minHeight: '400px' }}>
-        <p className="text-gray-600">Loading map...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full h-full relative" style={{ minHeight: '400px', height: '100%' }}>
+    <div className="w-full h-full">
       <MapContainer
         center={perthCenter}
-        zoom={11}
-        style={{ height: '100%', width: '100%', minHeight: '400px' }}
-        className="z-0"
-        key="perth-map"
+        zoom={10}
         scrollWheelZoom={true}
+        className="w-full h-full"
+        style={{ minHeight: '400px', height: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {validEvents.map((event, index) => (
+        
+        <MapController selectedEvent={selectedEvent} />
+
+        {events.map((event) => (
           <Marker
-            key={index}
-            position={event.coordinates!}
+            key={event.id}
+            position={[event.lat, event.lng]}
+            icon={fireworkIcon}
             eventHandlers={{
-              click: () => onEventSelect(event),
+              click: () => onEventClick(event),
             }}
           >
             <Popup>
-              <div className="p-2">
-                <h3 className="font-bold text-lg mb-2">
-                  <PurposeDisplay purpose={event.purpose} />
-                </h3>
-                <p className="text-sm text-gray-700 mb-1">
-                  <strong>Date & Time:</strong> {formatDateTime(event.date, event.time)}
-                </p>
-                <p className="text-sm text-gray-700 mb-1">
-                  <strong>Duration:</strong> {event.duration}
-                </p>
-                <p className="text-sm text-gray-700">
-                  <strong>Location:</strong> <AddressDisplay address={event.location} />
-                </p>
+              <div className="min-w-[200px]">
+                <h3 className="font-bold text-lg mb-2 text-gray-900">{event.purpose}</h3>
+                <div className="space-y-1 text-sm">
+                  <p className="text-gray-700">
+                    <span className="font-medium">Date:</span> {formatDate(event.date)}
+                  </p>
+                  <p className="text-gray-700">
+                    <span className="font-medium">Time:</span> {event.time}
+                  </p>
+                  <p className="text-gray-700">
+                    <span className="font-medium">Duration:</span> {event.duration}
+                  </p>
+                  <p className="text-gray-700">
+                    <span className="font-medium">Location:</span> {event.location}
+                  </p>
+                </div>
               </div>
             </Popup>
           </Marker>
         ))}
-        {selectedEvent && selectedEvent.coordinates && isValidPerthLocation(selectedEvent.coordinates[0], selectedEvent.coordinates[1]) && (
-          <MapCenter center={selectedEvent.coordinates} zoom={15} />
-        )}
       </MapContainer>
     </div>
   );
 }
-
