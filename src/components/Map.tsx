@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { FireworksEvent } from '../types/events';
 import { formatDateTime } from '../utils/dateUtils';
-import { cleanAddress } from '../utils/addressUtils';
+import AddressDisplay from './AddressDisplay';
 
 // Fix for default marker icons in React-Leaflet
 // Use CDN or public folder for production
@@ -86,7 +86,7 @@ export default function Map({ events, selectedEvent, onEventSelect }: MapProps) 
                   <strong>Duration:</strong> {event.duration}
                 </p>
                 <p className="text-sm text-gray-700">
-                  <strong>Location:</strong> {cleanAddress(event.location)}
+                  <strong>Location:</strong> <AddressDisplay address={event.location} />
                 </p>
               </div>
             </Popup>

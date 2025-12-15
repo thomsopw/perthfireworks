@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FireworksEvent } from '../types/events';
 import { calculateDistance, getUserLocation } from '../utils/geolocation';
 import { formatDateTime } from '../utils/dateUtils';
-import { cleanAddress } from '../utils/addressUtils';
+import AddressDisplay from './AddressDisplay';
 
 interface NearestEventsProps {
   events: FireworksEvent[];
@@ -105,7 +105,7 @@ export default function NearestEvents({ events, onEventSelect }: NearestEventsPr
               <p className="text-xs text-gray-600">
                 {formatDateTime(event.date, event.time)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{cleanAddress(event.location)}</p>
+              <p className="text-xs text-gray-500 mt-1"><AddressDisplay address={event.location} /></p>
             </div>
           ))}
         </div>
