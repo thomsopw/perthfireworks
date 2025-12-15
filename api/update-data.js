@@ -143,17 +143,33 @@ async function scrapeEvents() {
   const $ = cheerio.load(html);
   const events = [];
 
-  // Find the events table
+  // Find the events table - structure has 4 columns:
+  // Event Date | Approximate start time and duration | Location | Purpose
   $('table tbody tr').each((_, row) => {
     const cells = $(row).find('td');
-    if (cells.length >= 5) {
-      const date = $(cells[0]).text().trim();
-      const time = $(cells[1]).text().trim();
-      const duration = $(cells[2]).text().trim();
-      const location = $(cells[3]).text().trim();
-      const purpose = $(cells[4]).text().trim();
+    if (cells.length >= 4) {
+      // Extract text, replacing <br> with newlines for parsing
+      const dateCell = $(cells[0]).html()?.replace(/<br\s*\/?>/gi, '\n') || '';
+      const timeCell = $(cells[1]).html()?.replace(/<br\s*\/?>/gi, '\n') || '';
+      const locationCell = $(cells[2]).html()?.replace(/<br\s*\/?>/gi, ' ') || '';
+      const purposeCell = $(cells[3]).html()?.replace(/<br\s*\/?>/gi, ' ') || '';
 
-      if (date && time && location) {
+      // Parse date - format like "11/12/2025\nThursday" or "11/12/2025 &\n13/12/2025\nThursday & Saturday"
+      const dateText = $('<div>').html(dateCell).text().trim();
+      const dateMatch = dateText.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+      const date = dateMatch ? dateMatch[1] : dateText;
+
+      // Parse time and duration - format like "7:00 PM\n8 minutes"
+      const timeText = $('<div>').html(timeCell).text().trim();
+      const timeParts = timeText.split('\n').map(s => s.trim()).filter(Boolean);
+      const time = timeParts[0] || '';
+      const duration = timeParts[1] || '';
+
+      // Clean location and purpose - remove HTML tags
+      const location = $('<div>').html(locationCell).text().trim().replace(/\s+/g, ' ');
+      const purpose = $('<div>').html(purposeCell).text().trim().replace(/\s+/g, ' ');
+
+      if (date && location) {
         events.push({
           date,
           time,
