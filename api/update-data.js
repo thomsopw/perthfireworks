@@ -7,11 +7,21 @@ async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fixAddressWithAI(location) {
+async function fixAddressWithAI(location, req) {
   try {
-    const apiUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}/api/fix-address`
-      : `${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/fix-address`;
+    // Determine the base URL for the API
+    let baseUrl;
+    if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    } else if (req?.headers?.host) {
+      // Use request host if available
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      baseUrl = `${protocol}://${req.headers.host}`;
+    } else {
+      baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000';
+    }
+    
+    const apiUrl = `${baseUrl}/api/fix-address`;
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -33,11 +43,13 @@ async function fixAddressWithAI(location) {
   }
 }
 
-async function geocodeAddress(address) {
+async function geocodeAddress(address, req) {
   try {
     // First, fix the address using AI
-    const fixedAddress = await fixAddressWithAI(address);
-    console.log(`  Fixed: "${address}" → "${fixedAddress}"`);
+    const fixedAddress = await fixAddressWithAI(address, req);
+    if (fixedAddress !== address) {
+      console.log(`  Fixed: "${address}" → "${fixedAddress}"`);
+    }
     
     await delay(500); // Small delay after AI call
     
@@ -156,7 +168,7 @@ export default async function handler(req, res) {
       const event = events[i];
       console.log(`[${i + 1}/${events.length}] Processing: ${event.location}`);
       
-      const coords = await geocodeAddress(event.location);
+      const coords = await geocodeAddress(event.location, req);
       
       if (coords) {
         event.lat = coords.lat;
